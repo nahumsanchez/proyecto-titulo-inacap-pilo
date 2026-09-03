@@ -1,2 +1,2 @@
-# proyecto-titulo-inacap-pilo
+# proyecto-titulo-inacap
 Repositorio de proyecto de titulo inacap - Priscila Bahamondez
