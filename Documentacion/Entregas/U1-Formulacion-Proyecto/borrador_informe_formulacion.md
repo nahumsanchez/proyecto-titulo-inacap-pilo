@@ -5,6 +5,12 @@
 > misión/visión, presupuesto real, etc.) que el equipo debe validar directamente con el mandante
 > (Hospital Félix Bulnes Cerda) antes de la entrega, ya que no fueron proporcionados en la entrevista
 > base y no deben inventarse ni copiarse de fuentes externas sin verificar.
+>
+> **Actualizado para ES1:** la guía de Evaluación Sumativa 1 (`TIHI84_U1_ES1_GUÍA.txt`) agrega a la
+> ponderación las Actividades 7 y 8 (arquitectura TI y arquitectura empresarial, secciones VII y VIII)
+> y evalúa con escala Excelente/Bueno/Insatisfactorio en lugar del Sí/No de la EF1. Por eso ambas
+> secciones se desarrollaron aquí con mayor profundidad (plan de diseño concreto), y se cuidó el uso
+> de lenguaje formal/técnico y la coherencia problema→solución→conclusión (criterio 1.1.6).
 
 **Asignatura:** Proyecto de Título – TIHI84
 **Sección:** [PENDIENTE: completar]
@@ -316,37 +322,171 @@ corresponde.
 
 ## VII. Definición de arquitectura TI
 
-Arquitectura propuesta (a nivel de formulación, sujeta a definición técnica posterior):
+### 7.1 Necesidad de integración con sistemas existentes
 
-- **Aplicación web** con arquitectura cliente-servidor (front-end + back-end + base de datos
-  relacional), desplegable de forma independiente de los sistemas clínicos críticos (Trakcare), para no
-  interferir con la continuidad operacional del hospital.
-- Sin integración en tiempo real con sistemas preexistentes en esta primera fase (ver alcance 5.1.2);
-  se contempla exportación/reportería manual como punto de compatibilización.
-- **[PENDIENTE]** Definir stack tecnológico específico, modelo de despliegue (on-premise vs. nube) y
-  requisitos de seguridad de la propia aplicación (autenticación, cifrado de evidencia almacenada),
-  considerando que gestionará información sensible sobre el estado de seguridad del hospital.
+El hospital opera **Trakcare** como sistema clínico crítico (ficha clínica electrónica, admisión,
+urgencias). Se evaluó si el SGSI requiere integrarse en tiempo real con Trakcare y **se concluye que
+no**: el SGSI es un sistema de apoyo/gobierno (gestión documental de cumplimiento), no un sistema
+asistencial, por lo que integrarlo en línea con Trakcare añadiría riesgo técnico y regulatorio
+innecesario a un sistema crítico, sin aportar valor al objetivo del proyecto. En cambio, sí existen
+**puntos de integración asíncrona** necesarios:
+
+- Referenciar, dentro de un registro de incidente del SGSI, el sistema/módulo afectado (p. ej.
+  "Trakcare – módulo de admisión de urgencias") como dato descriptivo, sin conexión directa a la base
+  clínica.
+- Exportar reportes (PDF/Excel) del nivel de madurez e incidentes para sustentar el indicador de
+  gestión institucional ante la Dirección y organismos reguladores.
+- Permitir la carga manual de evidencia generada en otros sistemas (actas firmadas, correos,
+  certificados de capacitación) como archivos adjuntos.
+
+Esta decisión responde directamente al criterio de evaluación *"Define la arquitectura TI
+verificando la necesidad de integración con otros sistemas"*.
+
+### 7.2 Plan de diseño de la solución (arquitectura propuesta)
+
+Se propone una **aplicación web en 3 capas** (presentación, lógica de negocio, datos), de tipo
+cliente-servidor, organizada en los módulos ya definidos en el punto 5.1.1:
+
+```mermaid
+flowchart TB
+    subgraph Presentacion["Capa de Presentación"]
+        UI["SPA Web (dashboard, formularios)"]
+    end
+    subgraph Aplicacion["Capa de Aplicación (API REST)"]
+        AUTH["Módulo Autenticación / Roles (RBAC)"]
+        CTRL["Módulo Controles ISO 27001"]
+        MAD["Módulo Cálculo de Madurez"]
+        INC["Módulo Incidentes (taxonomía ANCI + plazos)"]
+        TERC["Módulo Terceros / Proveedores"]
+        PERS["Módulo Personas"]
+        REP["Módulo Reportería / Exportación"]
+    end
+    subgraph Datos["Capa de Datos"]
+        DB[("Base de datos relacional")]
+        FILES[("Repositorio de evidencia/archivos")]
+    end
+
+    UI --> AUTH
+    UI --> CTRL
+    UI --> MAD
+    UI --> INC
+    UI --> TERC
+    UI --> PERS
+    UI --> REP
+    CTRL --> DB
+    MAD --> DB
+    INC --> DB
+    TERC --> DB
+    PERS --> DB
+    REP --> DB
+    CTRL --> FILES
+    INC --> FILES
+    TERC --> FILES
+    PERS --> FILES
+```
+
+**Modelo de datos conceptual (entidades principales):** `Control` (dominio, descripción, estado),
+`Evidencia` (tipo, archivo, fecha, control asociado), `Incidente` (severidad ANCI, fecha detección,
+plazo de reporte, estado), `Tercero/Proveedor` (contrato, cláusulas de seguridad, estado de
+cumplimiento), `PersonaControl` (capacitación, antecedentes, confidencialidad, término de contrato) y
+`Usuario` (rol: encargado de ciberseguridad, administrador de contratos, referente técnico).
+
+**Justificación de la arquitectura elegida:** dado el alcance acotado (una sola institución, volumen
+transaccional bajo, equipo de 3 estudiantes y plazo de un semestre), se prefiere una arquitectura
+**monolítica modular en 3 capas** por sobre microservicios: reduce la complejidad de despliegue y
+mantenimiento, sin renunciar a la separación de responsabilidades por módulo (cada dominio de negocio
+queda encapsulado y es reemplazable a futuro). **[PENDIENTE]** Confirmar stack tecnológico específico
+(ej. backend Node.js/Express o Python/Django, frontend React, base de datos PostgreSQL) y justificarlo
+formalmente en el marco teórico (IV) según criterios de madurez, soporte y seguridad de cada
+tecnología.
+
+### 7.3 Seguridad de la arquitectura
+
+Dado que el propio sistema almacena información sensible sobre el estado de seguridad del hospital
+(controles, brechas, incidentes), se definen como requisitos arquitectónicos: autenticación con control
+de acceso basado en roles (RBAC), cifrado en tránsito (TLS) y en reposo para evidencia adjunta, y
+registro de auditoría (log inmutable) de cada cambio de estado sobre controles e incidentes.
+
+### 7.4 Modelo de despliegue
+
+Se recomienda un despliegue **on-premise o en nube privada dentro de la red corporativa del hospital**
+(no SaaS público de terceros), consistente con la naturaleza sensible de la información gestionada y
+con las restricciones de continuidad exigidas a un operador de importancia vital (Ley 21.663).
+
+Con este plan de diseño, la arquitectura queda definida (7.1–7.2) y justificada (7.2–7.4) de forma
+explícita, cubriendo los criterios *"define la arquitectura TI"* y *"justifica el uso de la arquitectura
+TI seleccionada"*.
 
 ---
 
 ## VIII. Reconocimiento de arquitectura empresarial
 
-El Hospital Félix Bulnes Cerda corresponde a una **organización pública de salud**, de estructura
-jerárquico-funcional, dependiente del Servicio de Salud Metropolitano Occidente. Los procesos de
-negocio afectados por este proyecto son principalmente de **apoyo/gobierno** (gestión de seguridad de
-la información, cumplimiento normativo) y no procesos asistenciales directos, por lo que el proyecto no
-interviene la atención de pacientes, pero sí impacta la trazabilidad y el reporte de eventos que
-podrían afectarla. **[PENDIENTE: complementar con organigrama y detalle de unidades formalmente
-involucradas.]**
+### 8.1 Tipo de organización y estructura
+
+El Hospital Félix Bulnes Cerda corresponde a una **organización pública de salud**, establecimiento de
+alta complejidad dependiente del Servicio de Salud Metropolitano Occidente (SSMOCC) y, en última
+instancia, del Ministerio de Salud de Chile. Su estructura es **jerárquico-funcional**, típica del
+sector público de salud: Dirección del establecimiento, Subdirecciones (Médica, Administrativa, Gestión
+del Cuidado, Recursos Humanos, entre otras) y unidades de apoyo transversal, entre ellas la unidad o el
+encargado de Ciberseguridad, cuya función de cumplimiento normativo (Ley 21.663, protección de datos)
+es transversal a toda la organización y reporta habitualmente a la Dirección o a la Subdirección de
+Gestión de la Información. **[PENDIENTE: reemplazar por organigrama oficial una vez validado con el
+mandante.]**
+
+Para ordenar el análisis se utiliza una vista simplificada de arquitectura empresarial (inspirada en
+TOGAF), en 4 capas:
+
+| Capa | Elemento institucional | Elemento del proyecto |
+|---|---|---|
+| Negocio | Proceso de gestión de seguridad de la información y cumplimiento normativo (Ley 21.663, protección de datos) | Objetivo general y objetivos específicos del SGSI (punto 5.3) |
+| Aplicación | Función del encargado de ciberseguridad, administrador de contratos, referente técnico | Módulos de Controles, Madurez, Incidentes, Terceros, Personas, Reportería (punto 7.2) |
+| Datos | Evidencia documental de cumplimiento (actas, contratos, certificados) | Modelo de datos conceptual (Control, Evidencia, Incidente, Tercero, PersonaControl) |
+| Tecnología | Infraestructura de red corporativa del hospital, sistema Trakcare | Aplicación web 3 capas, desplegada on-premise/nube privada (punto 7.4) |
+
+### 8.2 Compatibilidad de la solución con la arquitectura empresarial
+
+La solución es compatible con la arquitectura empresarial existente porque:
+
+- **No modifica procesos asistenciales** ni el sistema clínico Trakcare; opera exclusivamente sobre el
+  proceso de apoyo/gobierno de gestión de seguridad de la información, ya existente en la organización.
+- **Respeta la estructura de roles ya definida** por el hospital (encargado de ciberseguridad,
+  administrador de contratos, referente técnico), replicándolos como roles de usuario dentro del
+  sistema (RBAC), en lugar de crear nuevas funciones organizacionales.
+- **Puede adoptarse sin rediseñar la estructura organizacional actual**, ya que se integra como una
+  herramienta de apoyo a una función de cumplimiento que el hospital ya ejerce, cubriendo así los
+  criterios *"reconoce las características de la arquitectura empresarial"* y *"define la solución de
+  manera compatible con la arquitectura empresarial"*.
+
+**[PENDIENTE: complementar con organigrama oficial y detalle formal de las unidades involucradas una
+vez validado con el mandante.]**
 
 ---
 
 ## IX. Conclusiones
 
-**[PENDIENTE — redactar al finalizar el informe]**, sintetizando la importancia de contar con un SGSI
-sistematizado para un operador de importancia vital como el Hospital Félix Bulnes Cerda, los principales
-aprendizajes del equipo respecto al marco normativo chileno de ciberseguridad, y posibles líneas de
-profundización (p. ej. integración futura con Trakcare, automatización de reportes a la ANCI).
+El diagnóstico realizado (sección II) evidenció que el Hospital Félix Bulnes Cerda, en su condición de
+Operador de Importancia Vital bajo la Ley N.º 21.663, carece de un mecanismo centralizado para
+gestionar el estado de sus controles ISO/IEC 27001, la evidencia de cumplimiento y la clasificación de
+incidentes de ciberseguridad según la taxonomía de la ANCI, lo que compromete su capacidad de reportar
+oportunamente y de sustentar su indicador de gestión institucional. En respuesta directa a ese
+problema, la solución formulada (sección V) —un Sistema de Gestión de Seguridad de la Información con
+módulos de controles, madurez, incidentes, terceros y personas— y su arquitectura de soporte (secciones
+VII y VIII) fueron diseñadas para reemplazar el trabajo manual disperso por un registro único, auditable
+y visualmente comprensible, sin alterar los procesos asistenciales ni la estructura organizacional
+existente del hospital.
+
+De este modo, el problema identificado, la solución tecnológica propuesta y su arquitectura de
+implementación son coherentes entre sí: cada módulo del SGSI responde a una carencia concreta detectada
+en la entrevista con el mandante, y las decisiones de arquitectura (sin integración en tiempo real con
+Trakcare, despliegue en red corporativa, RBAC y auditoría) se justifican directamente por la naturaleza
+sensible de la información gestionada y por las obligaciones legales del hospital.
+
+**[PENDIENTE — a completar por el equipo]**: incorporar aquí las reflexiones y aprendizajes propios del
+proceso de levantamiento y formulación (p. ej. dificultades para interpretar la normativa de
+ciberseguridad, lecciones del trabajo en equipo), además de proponer líneas de profundización para
+etapas futuras del Proyecto de Título, tales como: integración progresiva con Trakcare mediante
+reportería automatizada, evaluación de una futura integración directa con la plataforma de la ANCI, y
+extensión del modelo de madurez a otros dominios normativos (p. ej. continuidad operacional).
 
 ---
 
@@ -369,3 +509,4 @@ profundización (p. ej. integración futura con Trakcare, automatización de rep
 - Anexo 2: Listado completo de requerimientos (IEEE 830 o historias de usuario).
 - Anexo 3: **[PENDIENTE]** Organigrama institucional.
 - Anexo 4: **[PENDIENTE]** Matriz RACI y carta Gantt.
+- Anexo 5: Diagrama de arquitectura de la soluci\u00f3n (ver punto 7.2) en formato ampliado.
